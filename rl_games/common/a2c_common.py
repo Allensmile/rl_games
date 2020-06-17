@@ -19,7 +19,8 @@ def swap_and_flatten01(arr):
     if arr is None:
         return arr
     s = arr.size()
-    return arr.transpose(0, 1).reshape(s[0] * s[1], *s[2:])
+    '''arr.transpose(0, 1).'''
+    return arr.reshape(s[0] * s[1], *s[2:])
 
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
@@ -119,11 +120,11 @@ class A2CBase:
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8)
-        self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.state_shape, dtype=torch_dtype).cuda()
-        self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-        self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-        self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
-        self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+        self.mb_obs = torch.zeros((batch_size, self.steps_num) + self.state_shape, dtype=torch_dtype).cuda()
+        self.mb_rewards = torch.zeros((batch_size, self.steps_num), dtype = torch.float32)
+        self.mb_values = torch.zeros((batch_size, self.steps_num), dtype = torch.float32)
+        self.mb_dones = torch.zeros((batch_size, self.steps_num), dtype = torch.uint8)
+        self.mb_neglogpacs = torch.zeros((batch_size, self.steps_num), dtype = torch.float32).cuda()
 
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
         mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
@@ -219,10 +220,10 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long).cuda()
+        self.mb_actions = torch.zeros((batch_size, self.steps_num), dtype = torch.long).cuda()
         if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
+            self.mb_values = torch.zeros((batch_size, self.steps_num, 2), dtype = torch.float32)
+            self.mb_intrinsic_rewards = torch.zeros((batch_size, self.steps_num), dtype = torch.float32)
     
     def env_step(self, actions):
         if not self.is_tensor_obses:
@@ -262,14 +263,14 @@ class DiscreteA2CBase(A2CBase):
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
      
-            mb_obs[n,:] = self.obs
-            mb_dones[n,:] = self.dones
+            mb_obs[:,n] = self.obs
+            mb_dones[:,n] = self.dones
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
-                mb_intrinsic_rewards[n,:] = intrinsic_reward
+                mb_intrinsic_rewards[:,n] = intrinsic_reward
             
             self.current_rewards += rewards
             self.current_lengths += 1
@@ -285,10 +286,10 @@ class DiscreteA2CBase(A2CBase):
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
 
-            mb_actions[n,:] = actions
-            mb_values[n,:] = values
-            mb_neglogpacs[n,:] = neglogpacs
-            mb_rewards[n,:] = shaped_rewards
+            mb_actions[:,n] = actions
+            mb_values[:,n] = values
+            mb_neglogpacs[:,n] = neglogpacs
+            mb_rewards[:,n] = shaped_rewards
             not_dones = 1.0 - self.dones.float()
 
             self.current_rewards = self.current_rewards * not_dones
@@ -529,12 +530,12 @@ class ContinuousA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
-        self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
-        self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
+        self.mb_actions = torch.zeros((batch_size, self.steps_num, self.actions_num), dtype = torch.float32).cuda()
+        self.mb_mus = torch.zeros((batch_size, self.steps_num, self.actions_num), dtype = torch.float32).cuda()
+        self.mb_sigmas = torch.zeros((batch_size, self.steps_num, self.actions_num), dtype = torch.float32).cuda()
         if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
+            self.mb_values = torch.zeros((batch_size, self.steps_num, 2), dtype = torch.float32)
+            self.mb_intrinsic_rewards = torch.zeros((batch_size, self.steps_num), dtype = torch.float32)
 
     def play_steps(self):
         mb_states = []
@@ -560,14 +561,14 @@ class ContinuousA2CBase(A2CBase):
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
      
-            mb_obs[n,:] = self.obs
-            mb_dones[n,:] = self.dones
+            mb_obs[:,n] = self.obs
+            mb_dones[:,n] = self.dones
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
-                mb_intrinsic_rewards[n,:] = intrinsic_reward
+                mb_intrinsic_rewards[:,n] = intrinsic_reward
             
             self.current_rewards += rewards
             self.current_lengths += 1
@@ -579,13 +580,13 @@ class ContinuousA2CBase(A2CBase):
             shaped_rewards = self.rewards_shaper(rewards)
             #epinfos.append(infos)
 
-            mb_actions[n,:] = actions
-            mb_values[n,:] = values
-            mb_neglogpacs[n,:] = neglogpacs
+            mb_actions[:,n] = actions
+            mb_values[:,n] = values
+            mb_neglogpacs[:,n] = neglogpacs
             
-            mb_mus[n,:] = mu
-            mb_sigmas[n,:] = sigma
-            mb_rewards[n,:] = shaped_rewards
+            mb_mus[:,n] = mu
+            mb_sigmas[:,n] = sigma
+            mb_rewards[:,n] = shaped_rewards
             not_dones = 1.0 - self.dones.float()
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
@@ -612,11 +613,11 @@ class ContinuousA2CBase(A2CBase):
                 nextnonterminal = 1.0 - fdones
                 nextvalues = last_extrinsic_values
             else:
-                nextnonterminal = 1.0 - mb_fdones[t+1]
-                nextvalues = mb_extrinsic_values[t+1]
+                nextnonterminal = 1.0 - mb_fdones[:,t+1]
+                nextvalues = mb_extrinsic_values[:,t+1]
             
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
-            mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
+            delta = mb_rewards[:,t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[:,t]
+            mb_advs[:,t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
 
         mb_returns = mb_advs + mb_extrinsic_values
 
